@@ -13,7 +13,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # add requirements-dev.txt for tests
 ```
 
-Fill in `.env` (it is git-ignored):
+Copy `.env.example` to `.env` and fill it in (`.env` is git-ignored, so your token is never committed):
 
 ```ini
 DHAN_CLIENT_ID=your_client_id
