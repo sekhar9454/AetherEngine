@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.parquet
+model.txt
+.venv/
+.pytest_cache/
+data/
+experiments/
