@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Trading Lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --ink: #16181d; --muted: #5d6573; --line: #e2e5ea; --soft: #f0f2f5;
+    --accent: #2457d6; --accent-ink: #ffffff; --good: #127a3e; --bad: #c0352b; --warn: #a86400;
+    --good-bg: #e6f4ec; --bad-bg: #fbeaea; --warn-bg: #fdf1dc; --accent-bg: #e8eefc;
+    --radius: 10px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101216; --panel: #181b21; --ink: #e8eaee; --muted: #9aa3b2; --line: #2a2f38; --soft: #20242c;
+      --accent: #6d95ff; --accent-ink: #0d1220; --good: #4cc47e; --bad: #ff7468; --warn: #f0b04c;
+      --good-bg: #16301f; --bad-bg: #3a1c1a; --warn-bg: #36290f; --accent-bg: #1c2742;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 16px 24px;
+           border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--soft); color: var(--muted); }
+  .pill.ok { background: var(--good-bg); color: var(--good); }
+  .pill.off { background: var(--warn-bg); color: var(--warn); }
+  .layout { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 20px; padding: 20px 24px;
+            max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr); padding: 16px; } }
+  @media (max-width: 600px) { header { padding: 14px 16px; } .pills { margin-left: 0; } .row { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-content: start; min-width: 0; }
+  .panel { min-width: 0; }
+  h2 { margin: 0 0 14px; font-size: 15px; }
+  h3 { margin: 18px 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+
+  /* form */
+  form { display: grid; gap: 14px; }
+  fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; }
+  legend { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+           color: var(--muted); margin-bottom: 8px; padding: 0; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; }
+  input, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+                  border-radius: 7px; padding: 7px 9px; width: 100%; min-width: 0; }
+  input[type=checkbox] { width: auto; accent-color: var(--accent); }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 0; }
+  .segmented { display: grid; grid-template-columns: 1fr 1fr; background: var(--soft); border-radius: 8px; padding: 3px; }
+  .segmented button { border: 0; background: transparent; color: var(--muted); padding: 7px; border-radius: 6px;
+                      font: inherit; font-weight: 600; cursor: pointer; }
+  .segmented button[aria-pressed=true] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .days { max-height: 150px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; display: grid; gap: 4px; }
+  .days .meta { color: var(--muted); font-size: 12px; margin-left: auto; }
+  details { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+  summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+  details[open] summary { margin-bottom: 10px; }
+  .error { background: var(--bad-bg); color: var(--bad); border-radius: 7px; padding: 8px 10px; font-size: 13px; white-space: pre-line; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 10px;
+                   font: inherit; font-weight: 700; cursor: pointer; }
+  button.primary:disabled { opacity: .55; cursor: default; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 7px;
+                 padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+  button.ghost.danger { color: var(--bad); }
+  a.ghost { color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 6px 11px; font-size: 13px; text-decoration: none; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; }
+  .table-wrap.scroll { max-height: 420px; overflow: auto; border-bottom: 1px solid var(--line); }
+  .table-wrap.scroll thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr.clickable { cursor: pointer; }
+  tbody tr.clickable:hover { background: var(--soft); }
+  tbody tr.selected { background: var(--accent-bg); }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .badge { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); text-transform: capitalize; }
+  .badge.running { background: var(--accent-bg); color: var(--accent); }
+  .badge.completed { background: var(--good-bg); color: var(--good); }
+  .badge.failed { background: var(--bad-bg); color: var(--bad); }
+  .badge.interrupted { background: var(--warn-bg); color: var(--warn); }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+
+  /* detail */
+  .detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .detail-head h2 { margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .progress { height: 6px; background: var(--soft); border-radius: 99px; overflow: hidden; margin-bottom: 14px; }
+  .progress div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .card { background: var(--soft); border-radius: 8px; padding: 10px 12px; }
+  .card .k { font-size: 12px; color: var(--muted); }
+  .card .v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .card .s { font-size: 12px; color: var(--muted); }
+  .live-strip { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; background: var(--soft);
+                border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+  .signal { font-weight: 800; padding: 3px 10px; border-radius: 6px; background: var(--panel); }
+  .signal.LONG { background: var(--good-bg); color: var(--good); }
+  .signal.SHORT { background: var(--bad-bg); color: var(--bad); }
+  .chart-box { position: relative; margin-top: 6px; }
+  canvas { width: 100%; height: 260px; display: block; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--panel); font-size: 12px;
+         padding: 4px 8px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -120%); display: none; }
+  .settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 16px; font-size: 13px; }
+  .settings div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px dashed var(--line); padding: 3px 0; }
+  .settings span:first-child { color: var(--muted); }
+  .note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Paper Trading Lab</h1>
+    <div class="sub">AetherEngine · fake money, real Dhan order book data</div>
+  </div>
+  <div class="pills" id="pills"></div>
+</header>
+
+<div class="layout">
+  <section class="panel">
+    <h2>New experiment</h2>
+    <form id="form" novalidate>
+      <div class="segmented" role="group" aria-label="Mode">
+        <button type="button" data-mode="replay" aria-pressed="true">Replay recorded days</button>
+        <button type="button" data-mode="live" aria-pressed="false">Live paper</button>
+      </div>
+      <p class="hint" id="mode-hint"></p>
+
+      <fieldset>
+        <legend>What to test</legend>
+        <label>Name (optional)<input name="name" maxlength="80" placeholder="e.g. threshold 0.75, 5 s hold"></label>
+        <label>Model<select name="model" required></select></label>
+        <label>Instrument<select name="instrument" required></select></label>
+        <div id="days-box">
+          <label class="check" style="margin-bottom:6px"><input type="checkbox" id="all-days" checked> All recorded days</label>
+          <div class="days" id="days"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Money</legend>
+        <div class="row">
+          <label>Starting capital (₹)<input name="starting_capital" type="number" min="1" step="1000"></label>
+          <label>Leverage (×)<input name="leverage" type="number" min="1" max="5" step="0.5"></label>
+        </div>
+        <div class="row">
+          <label>Trade size<input name="trade_size" type="number" min="1" step="1"></label>
+          <label>Size unit<select name="size_mode"><option value="value">₹ per trade</option><option value="shares">Shares</option></select></label>
+        </div>
+        <label class="check"><input type="checkbox" name="allow_short"> Allow short trades</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Signals and exits</legend>
+        <div class="row">
+          <label>Signal threshold<input name="signal_threshold" type="number" min="0.5" max="0.99" step="0.01"></label>
+          <label>Hold for (seconds)<input name="hold_seconds" type="number" min="0" step="0.5"></label>
+        </div>
+        <div class="row">
+          <label>Cooldown (seconds)<input name="cooldown_seconds" type="number" min="0" step="1"></label>
+          <label>Delay to fill (ms)<input name="latency_ms" type="number" min="0" max="5000" step="50"></label>
+        </div>
+        <label class="check"><input type="checkbox" name="exit_on_opposite"> Exit early on the opposite signal</label>
+        <p class="hint">Hold 0 = no time exit. The delay simulates the time between a decision and the fill.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Risk and timing (IST)</legend>
+        <div class="row">
+          <label>Start trading at<input name="start_time" type="time" step="60"></label>
+          <label>Square off at<input name="square_off_time" type="time" step="60"></label>
+        </div>
+        <label>Daily loss limit (₹, 0 = off)<input name="daily_loss_limit" type="number" min="0" step="100"></label>
+      </fieldset>
+
+      <details>
+        <summary>Charges</summary>
+        <fieldset>
+          <label class="check"><input type="checkbox" name="charges.enabled"> Apply brokerage, taxes and fees</label>
+          <div class="row">
+            <label>Brokerage (%)<input name="charges.brokerage_pct" type="number" min="0" step="0.001"></label>
+            <label>Brokerage cap (₹/order)<input name="charges.brokerage_cap" type="number" min="0" step="1"></label>
+          </div>
+          <div class="row">
+            <label>STT on sell (%)<input name="charges.stt_sell_pct" type="number" min="0" step="0.001"></label>
+            <label>Stamp duty on buy (%)<input name="charges.stamp_buy_pct" type="number" min="0" step="0.001"></label>
+          </div>
+          <div class="row">
+            <label>Exchange fee (%)<input name="charges.exchange_pct" type="number" min="0" step="0.00001"></label>
+            <label>SEBI fee (₹/crore)<input name="charges.sebi_per_crore" type="number" min="0" step="1"></label>
+          </div>
+          <label>GST on brokerage and fees (%)<input name="charges.gst_pct" type="number" min="0" step="1"></label>
+          <p class="hint">Defaults approximate Dhan's NSE intraday equity charges. Check them against Dhan's current pricing.</p>
+        </fieldset>
+      </details>
+
+      <div class="error" id="form-error" hidden></div>
+      <button class="primary" type="submit" id="start">Start experiment</button>
+    </form>
+  </section>
+
+  <div class="stack">
+    <section class="panel">
+      <h2>Experiments</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Name</th><th>Mode</th><th>Status</th><th class="num">Net P&amp;L</th><th class="num">Return</th>
+            <th class="num">Trades</th><th class="num">Win rate</th><th class="num">Charges</th><th class="num">Max DD</th><th>Started</th>
+          </tr></thead>
+          <tbody id="list"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="list-empty">No experiments yet. Pick your settings and start one.</div>
+    </section>
+
+    <section class="panel" id="detail" hidden>
+      <div class="detail-head">
+        <h2 id="d-name"></h2><span class="badge" id="d-status"></span>
+        <div class="actions">
+          <button class="ghost danger" id="d-stop" hidden>Stop</button>
+          <button class="ghost" id="d-clone">Use these settings</button>
+          <a class="ghost" id="d-csv" download>Download trades (CSV)</a>
+          <button class="ghost danger" id="d-delete">Delete</button>
+        </div>
+      </div>
+      <div class="progress" id="d-progress" hidden><div></div></div>
+      <div class="error" id="d-error" hidden></div>
+      <div class="live-strip" id="d-live" hidden></div>
+      <div class="cards" id="d-cards"></div>
+      <h3>Equity (marked to the price a position could close at)</h3>
+      <div class="chart-box"><canvas id="chart"></canvas><div class="tip" id="tip"></div></div>
+      <div id="d-days-wrap">
+        <h3>By day</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th class="num">Trades</th><th class="num">Net P&amp;L</th><th class="num">Charges</th></tr></thead>
+          <tbody id="d-days"></tbody>
+        </table></div>
+      </div>
+      <h3 id="d-trades-title">Recent trades</h3>
+      <div class="table-wrap scroll"><table>
+        <thead><tr><th>Side</th><th class="num">Qty</th><th>Entry</th><th class="num">Entry ₹</th><th>Exit</th>
+          <th class="num">Exit ₹</th><th class="num">Gross</th><th class="num">Charges</th><th class="num">Net</th><th>Exit reason</th></tr></thead>
+        <tbody id="d-trades"></tbody>
+      </table></div>
+      <h3>Settings</h3>
+      <div class="settings" id="d-settings"></div>
+      <p class="note">Fills assume your orders take displayed liquidity instantly and do not move the market. Real fills are usually a little worse.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (sel) => document.querySelector(sel);
+const form = $("#form");
+const state = { meta: null, mode: "replay", selected: null, detail: null, timer: null };
+
+// ---- formatting -----------------------------------------------------------------
+const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
+const inr0 = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
+const num = new Intl.NumberFormat("en-IN");
+const money = (v, whole) => v == null ? "–" : (whole ? inr0 : inr).format(v);
+const signed = (v) => v == null ? "–" : Math.abs(v) < 0.005 ? inr.format(0) : (v > 0 ? "+" : "") + inr.format(v);
+const pct = (v, digits = 2) => v == null ? "–" : `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
+const plain = (v, digits = 1) => v == null ? "–" : `${v.toFixed(digits)}%`;
+const tone = (v) => v == null || Math.abs(v) < 0.005 ? "" : v > 0 ? "pos" : "neg";
+const istTime = (ms) => new Date(ms).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+const istDateTime = (ms) => new Date(ms).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false,
+  day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const started = (iso) => iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false,
+  day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "–";
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v; else if (k === "text") node.textContent = v; else node.setAttribute(k, v);
+  }
+  for (const c of children) node.append(c);
+  return node;
+}
+
+// ---- api ------------------------------------------------------------------------
+async function api(path, options = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+  const body = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
+  if (!res.ok) {
+    const d = body?.detail;
+    const msg = Array.isArray(d)
+      ? d.map((e) => `${e.loc.filter((p) => p !== "body").join(".") || "settings"}: ${e.msg.replace(/^Value error, /, "")}`).join("\n")
+      : d || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return body;
+}
+
+// ---- form -------------------------------------------------------------------------
+function field(name) { return form.elements.namedItem(name); }
+
+function setValue(name, value) {
+  const input = field(name);
+  if (!input || value == null) return;
+  if (input.type === "checkbox") input.checked = Boolean(value);
+  else if (input.type === "time") input.value = String(value).slice(0, 5);
+  else input.value = value;
+}
+
+function fillForm(cfg) {
+  for (const [k, v] of Object.entries(cfg)) {
+    if (k === "charges") for (const [ck, cv] of Object.entries(v)) setValue(`charges.${ck}`, cv);
+    else setValue(k, v);
+  }
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  for (const b of form.querySelectorAll(".segmented button")) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  const live = state.meta?.live;
+  $("#mode-hint").textContent = mode === "replay"
+    ? "Runs your settings over days you have already recorded. Takes seconds, so try many variations."
+    : live?.available
+      ? `Trades fake money on the live feed until you press Stop.${live.connected ? "" : " The feed is not connected right now."}`
+      : "Live paper trading needs the Dhan feed. Restart without --no-feed to enable it.";
+  $("#days-box").hidden = mode !== "replay";
+  renderInstruments();
+  $("#start").disabled = mode === "live" && !live?.available;
+}
+
+function instrumentsFor(mode) {
+  const meta = state.meta;
+  if (mode === "live") return meta.live.instruments.map((i) => ({ ...i, label: `${i.exchange_segment}:${i.security_id}` }));
+  const seen = new Map();
+  for (const s of meta.sessions) seen.set(`${s.exchange_segment}:${s.security_id}`, s);
+  return [...seen.values()].map((s) => ({ ...s, label: `${s.exchange_segment}:${s.security_id}` }));
+}
+
+function renderInstruments() {
+  const select = field("instrument");
+  const previous = select.value;
+  select.replaceChildren(...instrumentsFor(state.mode).map((i) =>
+    el("option", { value: `${i.exchange_segment}:${i.security_id}`, text: i.label })));
+  if ([...select.options].some((o) => o.value === previous)) select.value = previous;
+  if (!select.options.length) select.append(el("option", { value: "", text: state.mode === "replay" ? "No recordings yet" : "No instruments subscribed" }));
+  renderDays();
+}
+
+function renderDays() {
+  const sid = Number(field("instrument").value.split(":")[1]);
+  const days = state.meta.sessions.filter((s) => s.security_id === sid);
+  const box = $("#days");
+  box.replaceChildren(...days.map((d) => el("label", { class: "check" },
+    el("input", { type: "checkbox", value: d.date, ...(($("#all-days").checked) ? { checked: "" } : {}) }),
+    d.date, el("span", { class: "meta", text: `${num.format(d.rows)} rows` }))));
+  if (!days.length) box.append(el("span", { class: "hint", text: "Record data with python -m src.main --record" }));
+  syncDayBoxes();
+}
+
+function syncDayBoxes() {
+  for (const cb of $("#days").querySelectorAll("input")) cb.disabled = $("#all-days").checked;
+}
+
+function collect() {
+  const value = (n) => field(n).value;
+  const number = (n) => Number(value(n));
+  const [segment, sid] = value("instrument").split(":");
+  const charges = {};
+  for (const n of ["brokerage_pct", "brokerage_cap", "stt_sell_pct", "stamp_buy_pct", "exchange_pct", "sebi_per_crore", "gst_pct"]) {
+    charges[n] = number(`charges.${n}`);
+  }
+  charges.enabled = field("charges.enabled").checked;
+  const days = $("#all-days").checked ? [] : [...$("#days").querySelectorAll("input:checked")].map((c) => c.value);
+  return {
+    name: value("name").trim(), mode: state.mode, exchange_segment: segment, security_id: Number(sid),
+    model: value("model"), days,
+    starting_capital: number("starting_capital"), size_mode: value("size_mode"), trade_size: number("trade_size"),
+    leverage: number("leverage"), allow_short: field("allow_short").checked,
+    signal_threshold: number("signal_threshold"), hold_seconds: number("hold_seconds"),
+    exit_on_opposite: field("exit_on_opposite").checked, cooldown_seconds: number("cooldown_seconds"),
+    daily_loss_limit: number("daily_loss_limit"), start_time: value("start_time"),
+    square_off_time: value("square_off_time"), latency_ms: number("latency_ms"), charges,
+  };
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#form-error");
+  error.hidden = true;
+  const payload = collect();
+  if (!payload.model) return showFormError("Add a trained model file to the models folder first.");
+  if (!payload.security_id) return showFormError("Choose an instrument.");
+  if (state.mode === "replay" && !$("#all-days").checked && !payload.days.length) return showFormError("Choose at least one day.");
+  const button = $("#start");
+  button.disabled = true;
+  button.textContent = "Starting…";
+  try {
+    const { id } = await api("/api/experiments", { method: "POST", body: JSON.stringify(payload) });
+    await refreshList();
+    select(id);
+  } catch (e) {
+    showFormError(e.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Start experiment";
+  }
+});
+
+function showFormError(message) {
+  const error = $("#form-error");
+  error.textContent = message;
+  error.hidden = false;
+}
+
+// ---- list -------------------------------------------------------------------------
+async function refreshList() {
+  const items = await api("/api/experiments");
+  $("#list-empty").hidden = items.length > 0;
+  $("#list").replaceChildren(...items.map((x) => {
+    const row = el("tr", { class: `clickable${x.id === state.selected ? " selected" : ""}` },
+      el("td", { text: x.name }),
+      el("td", { text: x.mode === "live" ? "Live" : "Replay" }),
+      el("td", {}, el("span", { class: `badge ${x.status}`,
+        text: x.status === "running" && x.mode === "replay" ? `running ${Math.round(x.progress * 100)}%` : x.status })),
+      el("td", { class: `num ${tone(x.net_pnl)}`, text: signed(x.net_pnl) }),
+      el("td", { class: `num ${tone(x.return_pct)}`, text: pct(x.return_pct, 3) }),
+      el("td", { class: "num", text: num.format(x.trades ?? 0) }),
+      el("td", { class: "num", text: plain(x.win_rate) }),
+      el("td", { class: "num", text: money(x.charges) }),
+      el("td", { class: "num", text: plain(x.max_drawdown_pct, 2) }),
+      el("td", { text: started(x.created) }));
+    row.addEventListener("click", () => select(x.id));
+    return row;
+  }));
+}
+
+// ---- detail -----------------------------------------------------------------------
+async function select(id) {
+  state.selected = id;
+  clearTimeout(state.timer);
+  for (const r of $("#list").children) r.classList.remove("selected");
+  await loadDetail();
+  refreshList();
+}
+
+async function loadDetail() {
+  if (!state.selected) return;
+  let d;
+  try {
+    d = await api(`/api/experiments/${state.selected}`);
+  } catch {
+    $("#detail").hidden = true;
+    state.selected = null;
+    return;
+  }
+  state.detail = d;
+  renderDetail(d);
+  if (d.status === "running") state.timer = setTimeout(loadDetail, d.mode === "live" ? 1000 : 400);
+}
+
+function renderDetail(d) {
+  const m = d.metrics;
+  $("#detail").hidden = false;
+  $("#d-name").textContent = d.name;
+  const badge = $("#d-status");
+  badge.className = `badge ${d.status}`;
+  badge.textContent = d.status;
+  $("#d-stop").hidden = d.status !== "running";
+  $("#d-delete").hidden = d.status === "running";
+  $("#d-csv").href = `/api/experiments/${d.id}/trades.csv`;
+
+  const bar = $("#d-progress");
+  bar.hidden = !(d.mode === "replay" && d.status === "running");
+  bar.firstElementChild.style.width = `${Math.round(d.progress * 100)}%`;
+  const err = $("#d-error");
+  err.hidden = !d.error;
+  err.textContent = d.error ? `Failed: ${d.error}` : "";
+
+  const live = $("#d-live");
+  live.hidden = !(d.mode === "live" && d.status === "running");
+  if (!live.hidden) {
+    const p = d.prediction, pos = d.position;
+    live.replaceChildren(
+      el("span", {}, "Signal ", el("span", { class: `signal ${p?.signal ?? ""}`, text: p?.signal ?? "waiting" })),
+      el("span", { text: p ? `P(up) ${p.p_up.toFixed(2)} · P(flat) ${p.p_flat.toFixed(2)} · P(down) ${p.p_down.toFixed(2)}` : "No prediction yet" }),
+      el("span", { text: pos ? `Open ${pos.side} ${num.format(pos.qty)} @ ${pos.entry_price.toFixed(2)}, mark ${pos.mark_price.toFixed(2)}` : "No open position" }),
+      ...(pos ? [el("span", { class: tone(pos.unrealized_pnl), text: `Unrealised ${signed(pos.unrealized_pnl)}` })] : []),
+      ...(d.halted ? [el("span", { class: "neg", text: `Paused: ${d.halted}` })] : []));
+  }
+
+  const cards = [
+    ["Net P&L", signed(m.net_pnl), tone(m.net_pnl), `Final equity ${money(m.final_equity, true)}`],
+    ["Return", pct(m.return_pct, 3), tone(m.return_pct), `on ${money(d.config.starting_capital, true)}`],
+    ["Trades", num.format(m.trades), "", `${m.long_trades} long · ${m.short_trades} short`],
+    ["Win rate", plain(m.win_rate), "", `${m.wins} wins · ${m.losses} losses`],
+    ["Gross P&L", signed(m.gross_pnl), tone(m.gross_pnl), "before charges"],
+    ["Charges", money(m.charges), "", m.trades ? `${money(m.charges / m.trades)} per trade` : ""],
+    ["Max drawdown", plain(m.max_drawdown_pct, 2), "", money(m.max_drawdown)],
+    ["Profit factor", m.profit_factor == null ? "–" : m.profit_factor.toFixed(2), "", "net wins ÷ net losses"],
+    ["Avg hold", m.avg_hold_s == null ? "–" : `${m.avg_hold_s.toFixed(1)} s`, "", `${num.format(m.ticks)} book updates`],
+  ];
+  $("#d-cards").replaceChildren(...cards.map(([k, v, t, s]) =>
+    el("div", { class: "card" }, el("div", { class: "k", text: k }), el("div", { class: `v ${t}`, text: v }), el("div", { class: "s", text: s }))));
+
+  drawChart(d.equity, d.config.starting_capital);
+
+  $("#d-days-wrap").hidden = d.days.length < 1;
+  $("#d-days").replaceChildren(...d.days.map((x) => el("tr", {},
+    el("td", { text: x.date }), el("td", { class: "num", text: num.format(x.trades) }),
+    el("td", { class: `num ${tone(x.net_pnl)}`, text: signed(x.net_pnl) }), el("td", { class: "num", text: money(x.charges) }))));
+
+  $("#d-trades-title").textContent = m.trades > d.recent_trades.length
+    ? `Latest ${d.recent_trades.length} of ${num.format(m.trades)} trades (download the CSV for all)` : "Trades";
+  $("#d-trades").replaceChildren(...d.recent_trades.map((t) => el("tr", {},
+    el("td", { class: t.side === "LONG" ? "pos" : "neg", text: t.side }),
+    el("td", { class: "num", text: num.format(t.qty) }),
+    el("td", { text: istDateTime(t.entry_ms) }), el("td", { class: "num", text: t.entry_price.toFixed(2) }),
+    el("td", { text: istTime(t.exit_ms) }), el("td", { class: "num", text: t.exit_price.toFixed(2) }),
+    el("td", { class: `num ${tone(t.gross_pnl)}`, text: signed(t.gross_pnl) }),
+    el("td", { class: "num", text: money(t.charges) }),
+    el("td", { class: `num ${tone(t.net_pnl)}`, text: signed(t.net_pnl) }),
+    el("td", { text: t.exit_reason }))));
+  if (!d.recent_trades.length) $("#d-trades").append(el("tr", {}, el("td", { colspan: "10", class: "empty", text: "No trades yet" })));
+
+  const c = d.config;
+  const settings = [
+    ["Mode", c.mode], ["Instrument", `${c.exchange_segment}:${c.security_id}`], ["Model", c.model],
+    ["Days", c.mode === "live" ? "live" : c.days.length ? c.days.join(", ") : "all recorded"],
+    ["Capital", money(c.starting_capital, true)],
+    ["Trade size", c.size_mode === "value" ? `${money(c.trade_size, true)} per trade` : `${num.format(c.trade_size)} shares`],
+    ["Leverage", `${c.leverage}×`], ["Shorts", c.allow_short ? "allowed" : "off"],
+    ["Threshold", c.signal_threshold], ["Hold", c.hold_seconds ? `${c.hold_seconds} s` : "no time exit"],
+    ["Opposite signal exit", c.exit_on_opposite ? "on" : "off"], ["Cooldown", `${c.cooldown_seconds} s`],
+    ["Daily loss limit", c.daily_loss_limit ? money(c.daily_loss_limit, true) : "off"],
+    ["Trading window", `${c.start_time.slice(0, 5)}–${c.square_off_time.slice(0, 5)}`],
+    ["Fill delay", `${c.latency_ms} ms`], ["Charges", c.charges.enabled ? "on" : "off"],
+  ];
+  $("#d-settings").replaceChildren(...settings.map(([k, v]) => el("div", {}, el("span", { text: k }), el("span", { text: String(v) }))));
+}
+
+$("#d-stop").addEventListener("click", async () => {
+  $("#d-stop").disabled = true;
+  try { await api(`/api/experiments/${state.selected}/stop`, { method: "POST" }); } catch (e) { alert(e.message); }
+  $("#d-stop").disabled = false;
+  await loadDetail();
+  refreshList();
+});
+$("#d-delete").addEventListener("click", async () => {
+  if (!confirm(`Delete "${state.detail.name}"? This removes its saved results.`)) return;
+  try { await api(`/api/experiments/${state.selected}`, { method: "DELETE" }); } catch (e) { return alert(e.message); }
+  state.selected = null;
+  $("#detail").hidden = true;
+  refreshList();
+});
+$("#d-clone").addEventListener("click", () => {
+  const c = state.detail.config;
+  setMode(c.mode);
+  fillForm({ ...c, name: "" });
+  field("instrument").value = `${c.exchange_segment}:${c.security_id}`;
+  $("#all-days").checked = !c.days.length;
+  renderDays();
+  for (const cb of $("#days").querySelectorAll("input")) cb.checked = !c.days.length || c.days.includes(cb.value);
+  form.scrollIntoView({ behavior: "smooth" });
+  field("name").focus();
+});
+
+// ---- equity chart -------------------------------------------------------------------
+function drawChart(points, capital) {
+  const canvas = $("#chart");
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const color = (v) => css.getPropertyValue(v).trim();
+  ctx.font = "12px system-ui, sans-serif";
+  canvas._points = null;
+  if (!points.length) {
+    ctx.fillStyle = color("--muted");
+    ctx.fillText("Equity appears once the experiment has processed some data.", 12, H / 2);
+    return;
+  }
+  const values = points.map((p) => p[1]).concat(capital);
+  let lo = Math.min(...values), hi = Math.max(...values);
+  if (hi - lo < 1) { lo -= 1; hi += 1; }
+  const pad = { l: 92, r: 14, t: 12, b: 26 };
+  const x = (i) => pad.l + (points.length === 1 ? 0.5 : i / (points.length - 1)) * (W - pad.l - pad.r);
+  const y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+
+  // y grid + labels
+  ctx.strokeStyle = color("--line"); ctx.fillStyle = color("--muted"); ctx.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = lo + (hi - lo) * k / 4, yy = Math.round(y(v)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke();
+    ctx.textAlign = "right"; ctx.fillText(inr0.format(v), pad.l - 8, yy + 4);
+  }
+  // day boundaries (x is by sample, so overnight gaps do not flatten the curve)
+  ctx.textAlign = "left";
+  const dayOf = (ms) => new Date(ms).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
+  let prev = null;
+  points.forEach((p, i) => {
+    const d = dayOf(p[0]);
+    if (d !== prev) {
+      const xx = Math.round(x(i)) + 0.5;
+      if (prev !== null) { ctx.strokeStyle = color("--line"); ctx.beginPath(); ctx.moveTo(xx, pad.t); ctx.lineTo(xx, H - pad.b); ctx.stroke(); }
+      ctx.fillStyle = color("--muted"); ctx.fillText(d, xx + 4, H - 8);
+      prev = d;
+    }
+  });
+  // starting capital baseline
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = color("--muted");
+  ctx.beginPath(); ctx.moveTo(pad.l, y(capital)); ctx.lineTo(W - pad.r, y(capital)); ctx.stroke(); ctx.setLineDash([]);
+  // curve
+  const last = points[points.length - 1][1];
+  ctx.strokeStyle = last >= capital ? color("--good") : color("--bad"); ctx.lineWidth = 1.75;
+  ctx.beginPath();
+  points.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p[1])) : ctx.moveTo(x(i), y(p[1]))));
+  ctx.stroke();
+  canvas._points = { points, x, y, pad, W };
+}
+
+$("#chart").addEventListener("mousemove", (e) => {
+  const c = e.currentTarget._points, tip = $("#tip");
+  if (!c) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const i = Math.max(0, Math.min(c.points.length - 1,
+    Math.round((mx - c.pad.l) / (c.W - c.pad.l - c.pad.r) * (c.points.length - 1))));
+  const [ms, v] = c.points[i];
+  tip.style.display = "block";
+  tip.style.left = `${c.x(i)}px`;
+  tip.style.top = `${c.y(v)}px`;
+  tip.textContent = `${istDateTime(ms)} · ${inr.format(v)}`;
+});
+$("#chart").addEventListener("mouseleave", () => { $("#tip").style.display = "none"; });
+window.addEventListener("resize", () => state.detail && drawChart(state.detail.equity, state.detail.config.starting_capital));
+
+// ---- boot -------------------------------------------------------------------------
+function renderPills() {
+  const m = state.meta;
+  const live = m.live;
+  const days = new Set(m.sessions.map((s) => s.date)).size;
+  $("#pills").replaceChildren(
+    el("span", { class: `pill ${live.available && live.connected ? "ok" : "off"}`,
+      text: !live.available ? "Live feed off (replay only)" : live.connected ? "Dhan feed connected" : "Dhan feed reconnecting" }),
+    el("span", { class: "pill", text: `${days} recorded day${days === 1 ? "" : "s"}` }),
+    el("span", { class: `pill ${m.models.length ? "" : "off"}`, text: `${m.models.length} model${m.models.length === 1 ? "" : "s"}` }));
+}
+
+async function refreshMeta() {
+  state.meta = await api("/api/meta");
+  renderPills();
+}
+
+async function boot() {
+  await refreshMeta();
+  const meta = state.meta;
+  field("model").replaceChildren(...(meta.models.length
+    ? meta.models.map((m) => el("option", { value: m, text: m }))
+    : [el("option", { value: "", text: "No models found" })]));
+  fillForm(meta.defaults);
+  for (const b of form.querySelectorAll(".segmented button")) b.addEventListener("click", () => setMode(b.dataset.mode));
+  field("instrument").addEventListener("change", renderDays);
+  $("#all-days").addEventListener("change", () => {
+    for (const cb of $("#days").querySelectorAll("input")) cb.checked = $("#all-days").checked || cb.checked;
+    syncDayBoxes();
+  });
+  setMode(meta.sessions.length || !meta.live.available ? "replay" : "live");
+  await refreshList();
+  setInterval(() => refreshList().catch(() => {}), 2000);
+  setInterval(() => refreshMeta().catch(() => {}), 10000);
+}
+
+boot().catch((e) => {
+  document.body.prepend(el("div", { class: "error", text: `Could not reach the engine: ${e.message}` }));
+});
+</script>
+</body>
+</html>
