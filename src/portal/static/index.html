@@ -398,6 +398,10 @@ form.addEventListener("submit", async (event) => {
   if (!payload.model) return showFormError("Add a trained model file to the models folder first.");
   if (!payload.security_id) return showFormError("Choose an instrument.");
   if (state.mode === "replay" && !$("#all-days").checked && !payload.days.length) return showFormError("Choose at least one day.");
+  if (payload.size_mode === "value" && payload.trade_size > payload.starting_capital * payload.leverage) {
+    const maxAllowed = payload.starting_capital * payload.leverage;
+    return showFormError(`Trade size (Rs ${num.format(payload.trade_size)}) cannot exceed Starting Capital x Leverage (Rs ${num.format(maxAllowed)}).`);
+  }
   const button = $("#start");
   button.disabled = true;
   button.textContent = "Starting…";

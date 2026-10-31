@@ -198,3 +198,5 @@ def test_config_validation():
         cfg(size_mode="shares", trade_size=10.5)
     with pytest.raises(ValueError):
         cfg(signal_threshold=0.4)
+    with pytest.raises(ValueError, match="cannot exceed"):
+        cfg(size_mode="value", trade_size=150_000, starting_capital=100_000, leverage=1.0)

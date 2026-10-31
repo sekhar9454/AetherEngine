@@ -57,6 +57,11 @@ class ExperimentConfig(BaseModel):
             raise ValueError("start_time must be before square_off_time")
         if self.size_mode == "shares" and self.trade_size != int(self.trade_size):
             raise ValueError("trade_size must be a whole number of shares")
+        if self.size_mode == "value" and self.trade_size > self.starting_capital * self.leverage:
+            max_allowed = self.starting_capital * self.leverage
+            raise ValueError(
+                f"Trade size (Rs {self.trade_size:,.0f}) cannot exceed starting capital x leverage (Rs {max_allowed:,.0f})"
+            )
         if "/" in self.model or "\\" in self.model or self.model.startswith("."):
             raise ValueError("model must be a plain file name")
         return self

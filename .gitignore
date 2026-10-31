@@ -4,5 +4,4 @@ __pycache__/
 model.txt
 .venv/
 .pytest_cache/
-data/
 experiments/
