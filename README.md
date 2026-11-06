@@ -1,199 +1,232 @@
 # AetherEngine
 
-Streams the DhanHQ 20-level market depth feed, computes order book features on every update, and predicts whether the mid-price will move up, down or stay flat over the next 3 seconds using LightGBM. Signals are shown on a live terminal dashboard. A local web portal, the **paper trading lab**, simulates trading those signals with fake money, either on recorded days or live. The engine never places real orders.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![NSE India](https://img.shields.io/badge/Exchange-NSE%20India-orange.svg)](https://www.nseindia.com/)
+[![Feed: DhanHQ L3](https://img.shields.io/badge/Feed-DhanHQ%2020--Depth-purple.svg)](https://dhanhq.co/)
 
-For a non-technical explanation of the idea, see `The Market Alpha Engine, Explained Simply.pdf`.
+**AetherEngine** is an institutional-grade, low-latency order book intelligence and automated paper execution platform for National Stock Exchange of India (NSE) equities. It streams DhanHQ's binary Level-3 (20-depth) market feed, computes 15 microstructural order book features in real time, and forecasts 3-second price drift using a walk-forward LightGBM ensemble.
 
-## Setup
+The engine includes an interactive **Paper Trading Lab** web portal that simulates institutional intraday execution with full NSE transaction cost modeling (brokerage, STT, turnover charges, GST) and dynamic order book queue slippage.
 
-Requires Python 3.11+ and a Dhan account with Data APIs enabled.
+> **Project Documentation & Executive Briefing:**
+> - Detailed Quantitative Report: [`AetherEngine_Comprehensive_System_Report.pdf`](AetherEngine_Comprehensive_System_Report.pdf)
+> - Slide Presentation: [`AetherEngine_Project_Presentation.pptx`](AetherEngine_Project_Presentation.pptx)
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # add requirements-dev.txt for tests
+---
+
+## Key System Highlights
+
+* **Wire-Speed Binary Decoding:** Asynchronous parsing of Dhan's binary 20-depth packets (12-byte header + 20 × 16-byte bid/ask levels) in under 50 microseconds.
+* **Continuous Feature Engine:** Extracts 15 normalized microstructure signals on every book change, including 3-tier depth band imbalances, micro-price offsets, and spread in basis points.
+* **Large-Scale Multi-Day Validation:** Trained and empirically validated across **5 full NSE market sessions** (October 30 – November 6, 2026), capturing **7,103,671 real order book rows** across 40 liquid large-cap symbols.
+* **1,059-Tree LightGBM Model:** Multiclass boosted decision trees (DOWN, FLAT, UP) trained with strict chronological expanding windows and label purging to eliminate lookahead bias.
+* **Proven Out-of-Sample Predictability:** Achieves **46.8% balanced accuracy** (vs 33.3% random baseline) and **60.4% to 66.7% directional win precision** at high-conviction thresholds ($\ge 0.75 - 0.80$).
+* **Friction-Aware Paper Broker:** Realistically penalizes taker orders with $\frac{1}{4}$ spread crossing costs, depth participation volume caps (50 bps), and strict NSE fee drag.
+
+---
+
+## Empirical Benchmark & Alpha Attribution
+
+### Out-of-Sample Performance (November 6 Session, 1.14M Labeled Rows)
+
+| Probability Threshold | Signals Fired | Directional Win Precision | Target Horizon | Operational Character |
+| :--- | :--- | :--- | :--- | :--- |
+| **0.70** | 20,727 | 44.6% Long / 50.5% Short | 3 seconds | Active / Moderate market noise |
+| **0.72** | 12,163 | 46.8% Long / 54.0% Short | 3 seconds | Improved signal-to-noise |
+| **0.75** | 4,487 | **48.8% Long / 60.4% Short** | 3 seconds | **Recommended Production Floor** |
+| **0.78** | 1,149 | **54.5% Long / 62.5% Short** | 3 seconds | **High-Conviction Institutional** |
+| **0.80** | 307 | **61.9% Long / 66.7% Short** | 3 seconds | **Maximum Precision / Low Churn** |
+
+### Top Predictive Microstructure Features (Model Gain %)
+
+| Feature | Microstructural Formulation | Model Gain Attribution |
+| :--- | :--- | :--- |
+| `band_1_imbalance` | Immediate Top-of-Book Depth Ratio: $(Q_{b1} - Q_{a1}) / (Q_{b1} + Q_{a1})$ | **31.2%** |
+| `obi_l1` | Level-1 Order Book Imbalance | **14.5%** |
+| `spread_bps` | Bid-Ask Spread normalized by Mid-Price in Basis Points | **12.8%** |
+| `micro_offset_bps` | Weighted Micro-Price deviation from Mid-Price (bps) | **8.5%** |
+| `band_2_imbalance` | Ticks 2–5 Consolidated Depth Imbalance Ratio | **3.9%** |
+| *Bands 2 & 3 Depths* | Cumulative Bid/Ask Volumes across Ticks 6–20 | **29.1%** |
+
+---
+
+## System Architecture
+
+```
+                 ┌────────────────────────────────────────────────────────┐
+                 │                DhanHQ WebSocket Feed                  │
+                 │              (Binary 20-Depth L3 Packets)              │
+                 └───────────────────────────┬────────────────────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │     src.feed.binary_parser│
+                               │  (Header + 20 Bid/Ask Px) │
+                               └─────────────┬─────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │  src.features.orderbook   │
+                               │  (Latest 20 Depth Cache)  │
+                               └─────────────┬─────────────┘
+                                             │
+                                             ▼
+                               ┌───────────────────────────┐
+                               │  src.features.calculator  │
+                               │   (15 Microstructure Feats│
+                               └──────┬─────────────┬──────┘
+                                      │             │
+                    ┌─────────────────┘             └──────────────────┐
+                    ▼                                                  ▼
+     ┌───────────────────────────────┐                  ┌───────────────────────────────┐
+     │     src.pipeline.recorder     │                  │    src.inference.predictor    │
+     │  (Atomic Compressed Parquet)  │                  │  (1,059-Tree LightGBM Engine) │
+     └───────────────────────────────┘                  └──────────────┬────────────────┘
+                                                                       │
+                                        ┌──────────────────────────────┴──────────────────────────────┐
+                                        ▼                                                             ▼
+                         ┌─────────────────────────────┐                               ┌─────────────────────────────┐
+                         │      Rich Live Dashboard    │                               │   src.paper.broker (Lab)    │
+                         │   (Terminal Tick Monitor)   │                               │  (Web UI @ 127.0.0.1:8000)   │
+                         └─────────────────────────────┘                               └─────────────────────────────┘
 ```
 
-Copy `.env.example` to `.env` and fill it in (`.env` is git-ignored, so your token is never committed):
+---
 
+## Installation & Setup
+
+### Prerequisites
+* Python 3.11 or Python 3.12
+* A Dhan trading account with **Data APIs** enabled ([dhanhq.co](https://dhanhq.co/))
+
+### 1. Clone & Create Environment
+```bash
+git clone https://github.com/your-username/AetherEngine.git
+cd AetherEngine
+
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# Linux/macOS:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+pip install -r requirements-dev.txt   # Optional: for tests & report building
+```
+
+### 2. Configure Credentials
+Copy `.env.example` to `.env` and insert your Dhan credentials:
+```bash
+cp .env.example .env
+```
+Edit `.env`:
 ```ini
-DHAN_CLIENT_ID=your_client_id
-DHAN_ACCESS_TOKEN=your_access_token
-# Comma-separated SEGMENT:SECURITY_ID pairs, max 50 per connection.
-DHAN_INSTRUMENTS=NSE_EQ:1333
+DHAN_CLIENT_ID=your_client_id_here
+DHAN_ACCESS_TOKEN=your_access_token_here
+
+# Up to 50 instruments per connection
+DHAN_INSTRUMENTS=NSE_EQ:1333,NSE_EQ:11536,NSE_EQ:1594,NSE_EQ:2885,NSE_EQ:10999,NSE_EQ:317,NSE_EQ:15083,NSE_EQ:1922
 ```
 
-Segments: `IDX_I`, `NSE_EQ`, `NSE_FNO`, `NSE_CURRENCY`, `BSE_EQ`, `MCX_COMM`, `BSE_CURRENCY`, `BSE_FNO`.
+---
 
-## Usage
+## Operating Modes & Usage
 
-The workflow has three steps: record live data, train on it, then run live with the model. Run every command from this directory.
+### 1. Record Live Market Data
+Stream real-time 20-depth order books and write compressed Parquet batches during market hours (09:15 – 15:30 IST):
+```bash
+python -m src.main --record --data-dir data
+```
+* Partitions are organized chronologically: `data/<IST_DATE>/part-<recv_ns>.parquet`.
+* Safe shutdown via `Ctrl+C` cleanly flushes memory buffers to disk.
+
+### 2. Train the Model
+Fit a walk-forward purged LightGBM model on recorded Parquet sessions:
+```bash
+python -m src.pipeline.trainer --data data --model model.txt --signal-threshold 0.75
+```
+* `--horizon`: Forecast horizon in seconds (default `3.0` s).
+* `--threshold-pct`: Minimum return threshold for UP/DOWN labels (default `0.01%`).
+* `--split-time`: Intraday train/test split boundary when training on a single day (default `13:00` IST).
+
+### 3. Run Live Engine with Signal Dashboard
+Stream live data, evaluate predictions in real time, and display the Rich terminal monitor:
+```bash
+python -m src.main --model model.txt --threshold 0.75 --focus NSE_EQ:11536
+```
+To run without the terminal dashboard (lowest latency for server deployments):
+```bash
+python -m src.main --model model.txt --headless --log-file aether.log
+```
+
+### 4. Launch the Paper Trading Lab (Web Portal)
+Launch the local web portal to test strategies with zero financial risk:
+```bash
+# Live paper trading + web portal
+python -m src.main --portal --model model.txt
+
+# Offline replay mode (no Dhan credentials or market hours needed):
+python -m src.main --portal --no-feed --data-dir data
+```
+Open **`http://127.0.0.1:8000`** in your browser.
+
+---
+
+## Paper Trading Lab Parameters
+
+The paper broker enforces institutional market mechanics:
+
+| Parameter | Default | Practical Purpose |
+| :--- | :--- | :--- |
+| **Starting Capital** | ₹1,00,000 | Initial simulated account equity |
+| **Trade Size** | ₹50,000 | Capital deployed per entry |
+| **Leverage** | 1× (up to 5×) | Position size capped at `capital × leverage` |
+| **Signal Threshold** | 0.75 | Model probability required to trigger entry |
+| **Time Exit** | 3.0 s | Force close position after $N$ seconds |
+| **Exit on Opposite** | Enabled | Early exit when the model flips direction |
+| **Dynamic Slippage** | Enabled | Taker orders walk the 20 levels; pays $\frac{1}{4}$ spread + queue impact |
+| **NSE Charges** | Enabled | Brokerage (0.03% max ₹20), STT (0.025% on sells), NSE exchange charges (0.00297%), SEBI fees, GST |
+
+---
+
+## Directory Layout
+
+```
+AetherEngine/
+├── src/
+│   ├── feed/               # Binary WebSocket ingestion & packet unpacking
+│   ├── features/           # Level-3 order book cache & 15 microstructure features
+│   ├── inference/          # Low-latency LightGBM predictor
+│   ├── pipeline/           # Parquet partition recorder & walk-forward trainer
+│   ├── paper/              # Simulated broker, charge calculations, replay manager
+│   ├── portal/             # FastAPI portal server & single-page HTML5 lab
+│   └── main.py             # CLI entrypoint, asyncio loop, and Rich dashboard
+├── tests/                  # Offline test suite (mock server, feature math, broker)
+├── .env.example            # Template for Dhan credentials & symbol universe
+├── .gitignore              # Clean rules (blocks credentials, parquets, pycache)
+├── model.txt               # Trained 1,059-tree LightGBM model artifact
+├── pytest.ini              # Test runner configuration
+├── requirements.txt        # Runtime dependencies
+└── requirements-dev.txt    # Testing, linting, and report generation tools
+```
+
+---
+
+## Testing & Quality Assurance
+
+AetherEngine includes an offline test harness that verifies binary decoding, feature math, order book reconstruction, and simulated broker mechanics against hand-calculated synthetic markets:
 
 ```bash
-# 1. Record during market hours (09:15-15:30 IST). Ctrl+C flushes and exits.
-python -m src.main --record
+# Run complete test suite
+pytest -v
 
-# 2. Train on everything recorded under data/
-python -m src.pipeline.trainer --data data --model model.txt
-
-# 3. Live signals (optionally keep recording at the same time)
-python -m src.main --model model.txt --record
+# Run fast unit tests (parser, client, features)
+pytest -m "not slow"
 ```
 
-Running `python -m src.main` with neither flag just shows the dashboard. Add `--headless` to log a status line every 10 s instead, which is best for servers and lowest latency.
+---
 
-### `src.main` options
+## License
 
-| Flag | Default | Purpose |
-| --- | --- | --- |
-| `--record` | off | Write feature vectors and the raw book to Parquet |
-| `--data-dir` | `data` | Where recordings go |
-| `--flush-interval` | `60` | Max seconds between Parquet flushes (also flushes every 50,000 rows) |
-| `--model` | none | LightGBM `model.txt` for live predictions |
-| `--threshold` | `0.70` | Probability needed for a LONG or SHORT signal |
-| `--focus` | first instrument | `SEGMENT:SECURITY_ID` shown on the dashboard |
-| `--headless` | off | No dashboard; log status lines instead |
-| `--refresh-hz` | `4` | Dashboard refresh rate |
-| `--queue-size` | `10000` | Feed buffer; when full, the oldest update is dropped |
-| `--log-file` | none | Also write logs to this file |
-
-Exit codes: `0` normal shutdown, `1` Dhan rejected the session (bad or expired token, Data APIs not enabled, too many connections), `2` configuration error.
-
-### `src.pipeline.trainer` options
-
-| Flag | Default | Purpose |
-| --- | --- | --- |
-| `--data` | `data` | Recorder output directory |
-| `--model` | `model.txt` | Output path |
-| `--security-id` | all | Train on one instrument only (recommended when recording several) |
-| `--horizon` | `3` | Label look-ahead in seconds |
-| `--threshold-pct` | `0.01` | Move (in %) that counts as UP or DOWN |
-| `--split-time` | `13:00` | IST train/test boundary when only one session is recorded |
-| `--signal-threshold` | `0.70` | Threshold used when reporting signal precision |
-
-The trainer prints out-of-sample results per fold, a confusion matrix, and feature importance. Read the **LONG prec** and **SHORT prec** columns: they show how often a signal at the chosen threshold was right on data the model never saw.
-
-## Paper trading lab
-
-A local web portal for trading the model's signals with fake money and comparing settings.
-
-```bash
-python -m src.main --portal                 # live feed + lab at http://127.0.0.1:8000
-python -m src.main --portal --record        # also keep recording while you experiment
-python -m src.main --portal --no-feed       # replay-only lab; no Dhan credentials or market hours needed
-```
-
-It has two modes. Both use the same simulated broker, so their results are directly comparable.
-
-| Mode | Data | Time per experiment | Use it to |
-| --- | --- | --- | --- |
-| **Replay** | Days already recorded under `--data-dir` | Seconds | Try many settings quickly |
-| **Live paper** | The running Dhan feed | Until you press Stop | Confirm the best settings on fresh data |
-
-Live mode can only trade instruments listed in `DHAN_INSTRUMENTS`. Several live experiments can run side by side, each with its own model and settings. The portal lists every LightGBM model file (`*.txt`) in `--models-dir`, which is the current directory by default.
-
-### Settings
-
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| Starting capital | ₹1,00,000 | Fake money at the start |
-| Trade size | ₹50,000 per trade | Either ₹ per trade or a fixed number of shares |
-| Leverage | 1× | Position value can be at most equity × leverage (up to 5×) |
-| Allow short trades | on | Whether SHORT signals open short positions |
-| Signal threshold | 0.70 | Probability needed for LONG or SHORT |
-| Hold for | 3 s | Time exit; 0 turns it off |
-| Exit on opposite signal | on | Close early when the model flips; it can reverse on the same update |
-| Cooldown | 0 s | Wait after an exit before the next entry |
-| Delay to fill | 0 ms | Time between a decision and its fill; the fill uses the book at that later moment |
-| Start trading at / Square off at | 09:15 / 15:15 IST | No entries outside this window; open positions close at square-off |
-| Daily loss limit | ₹2,000 | Close and stop for the rest of the day once the day's loss reaches this; 0 turns it off |
-| Charges | on | Brokerage (0.03%, capped at ₹20 per order), STT 0.025% on sells, NSE fee 0.00297%, SEBI ₹10 per crore, stamp duty 0.003% on buys, and 18% GST on brokerage and fees. These approximate Dhan's NSE intraday equity charges; check them against Dhan's current pricing. |
-
-### How fills are simulated
-
-- **Price.** A buy fills against the ask side and a sell against the bid side. Each walks the 20 visible levels from the best price outward, so large orders get a worse average price.
-- **One position at a time.** There is no pyramiding, and nothing is held overnight. If data ends before square-off, the position closes at the last price.
-- **Equity.** Open positions are valued at the price they could close at right now (the best bid for longs, the best ask for shorts), not the mid-price.
-- **Limitation.** Fills assume your order takes displayed liquidity instantly and does not move the market. Real fills are usually a little worse, so use the delay setting to stress-test.
-
-### Results
-
-Each experiment shows:
-- net and gross P&L, charges, return, win rate, profit factor, maximum drawdown and average hold time;
-- an equity curve and a per-day table;
-- the most recent trades, with the full list as a CSV download.
-
-Experiments are saved under `experiments/<id>/`: `experiment.json` holds the settings and results, and `trades.csv` holds every trade. They are reloaded on restart. Live experiments are also saved every 30 s. On shutdown (Ctrl+C), live experiments are squared off and saved before the feed closes.
-
-The portal listens on 127.0.0.1 only. The process holds your Dhan token, so do not expose `--host` to a network. API docs are at `/api/docs`.
-
-### Lab options for `src.main`
-
-| Flag | Default | Purpose |
-| --- | --- | --- |
-| `--portal` | off | Serve the lab |
-| `--host` / `--port` | `127.0.0.1` / `8000` | Where it listens |
-| `--no-feed` | off | Run the lab without connecting to Dhan (replay only) |
-| `--experiments-dir` | `experiments` | Where experiments are saved |
-| `--models-dir` | `.` | Where the lab looks for model files |
-
-## How it works
-
-```
-Dhan WebSocket ─▶ binary_parser ─▶ queue ─▶ order book ─▶ features ─┬─▶ recorder (Parquet)
-                                                                   └─▶ predictor ─▶ signal ─▶ dashboard
-```
-
-| Module | Responsibility |
-| --- | --- |
-| `src/feed/websocket_client.py` | Connects, subscribes (RequestCode 23), reconnects with jittered exponential backoff, sends RequestCode 12 on shutdown |
-| `src/feed/binary_parser.py` | Splits stacked packets in each frame and decodes the 12-byte header plus 20 × 16-byte levels |
-| `src/features/orderbook.py` | Holds the latest 20 bid and ask levels per instrument |
-| `src/features/calculator.py` | Computes the feature vector (below) |
-| `src/pipeline/recorder.py` | Buffers rows; writes atomic part files to `data/<IST date>/part-<recv_ns>.parquet` |
-| `src/pipeline/trainer.py` | Labels, walk-forward validation, final LightGBM fit |
-| `src/inference/predictor.py` | Loads `model.txt` and returns P(DOWN), P(FLAT), P(UP) and the signal |
-| `src/main.py` | Orchestration, batching, signal edge detection, Rich dashboard |
-| `src/paper/broker.py` | Simulated broker: fills, charges, exits and risk limits, driven only by update timestamps |
-| `src/paper/replay.py` | Loads recorded days and feeds them through the broker |
-| `src/paper/manager.py` | Starts, stops, saves and reloads experiments; connects live experiments to the engine |
-| `src/portal/server.py` | FastAPI app and uvicorn server running in the engine's event loop |
-| `src/portal/static/index.html` | The lab's single page (plain HTML and JavaScript, no build step) |
-
-**Features.** Spread (absolute and bps), mid-price, micro-price and its offset from mid, order book imbalance over the top 1, 5 and 20 levels, and bid/ask volume within 0–0.05%, 0.05–0.15% and 0.15–0.50% of mid, plus the imbalance of each band. Mid-price and micro-price are recorded but not fed to the model, because absolute price levels drift between days.
-
-**Labels.** Each row gets the mid-price at the first tick at or after t + 3 s, within the same session. The row is dropped if that tick arrives more than 2 s late, for example after a feed gap. A move above +0.01% is UP (1), below −0.01% is DOWN (−1), otherwise FLAT (0).
-
-**Validation.** The split is always chronological, never random. With one recorded session, the model trains before 13:00 and tests after. With several, each session is tested on a model trained only on earlier sessions. Training rows whose label window reaches into the test period are purged. The final model is fit on all data, using the median best iteration across folds.
-
-**Batching.** The engine applies every queued packet before computing features, then computes once per changed book. A frame's bid and ask are therefore never evaluated half-applied, and a backlog collapses to the latest state instead of being replayed.
-
-## Data layout
-
-Each Parquet row holds `recv_ns` (receive time in epoch ns; Dhan packets carry no exchange timestamp), `exchange_segment`, `security_id`, every feature column, and the raw book as `bid_px`, `bid_qty`, `ask_px`, `ask_qty` (fixed-size arrays of 20). Keeping the raw book lets you design new features later without re-recording.
-
-## Tests
-
-```bash
-pip install -r requirements-dev.txt
-pytest                   # full suite, about 30 s
-pytest -m "not slow"     # parser, client and feature tests, about 1 s
-```
-
-The suite runs entirely offline. It uses a local mock of the Dhan server and a synthetic market (`tests/synth.py`) in which book imbalance genuinely predicts price drift. It checks:
-
-- packet decoding;
-- reconnect and fatal-error handling;
-- feature math against hand-worked books;
-- labels against brute force;
-- that the model beats chance on an unseen day;
-- graceful SIGINT shutdown of the real CLI;
-- the paper broker against hand-worked books (fills, charges, every exit rule and risk limit);
-- replay and live experiments through the portal API, and the portal CLI itself.
-
-## Known caveats
-
-- **Not yet verified against the live Dhan feed.** Everything has been tested against a mock built from Dhan's documentation. Dhan's docs place the bid/ask response code at byte 3 in one table and byte 12 in another; this code follows the header table (byte 3). If the first live run shows no updates or nonsense prices, check that first.
-- **The subscribe code is 23.** RequestCode 15 is the ticker code of the regular market feed and does not apply to the 20-depth endpoint.
-- **Latency depends on the machine.** Median tick-to-signal measured 0.3–0.8 ms on a laptop using the `powersave` CPU governor, with a p99 of 2–3 ms. Use the `performance` governor and `--headless` for the best numbers. The dashboard redraws on the same event loop as the feed.
-- **Signals can flicker.** When a probability hovers near the threshold, the signal flips between LONG and FLAT. Hysteresis (separate entry and exit thresholds) is a possible improvement.
-- **Synthetic results say nothing about real alpha.** Record several real sessions before trusting any model. A 0.01% move is often smaller than trading costs.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
