@@ -45,12 +45,6 @@ htmlcov/
 .tox/
 .nox/
 
-# Heavy Binary Datasets & Models (Over 200MB / 7.1M rows)
-data/
-*.parquet
-model.txt
-experiments/
-
 # IDE & Operating System Files
 .DS_Store
 .DS_Store?

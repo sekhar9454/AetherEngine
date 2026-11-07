@@ -1,0 +1,3 @@
+side,qty,entry_time,entry_price,exit_time,exit_price,hold_s,gross_pnl,charges,net_pnl,exit_reason
+LONG,43,2026-10-30T12:26:45.689+05:30,11416.6977,2026-10-30T15:12:06.158+05:30,11401.2791,9920.469,-663.0,0.0,-663.0,opposite signal
+SHORT,43,2026-10-30T15:12:06.158+05:30,11401.2791,2026-10-30T15:15:00.372+05:30,11391.907,174.214,403.0,0.0,403.0,square-off
